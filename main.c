@@ -90,7 +90,6 @@ void init_I2C1(void){
 	I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit; // set address length to 7 bit addresses
 	I2C_Init(I2C1, &I2C_InitStruct);				// init I2C1
 
-	/*
 	//setup interrupts
 	uint16_t i2c_int_flags = 
 		I2C_IT_ERR | 
@@ -105,7 +104,6 @@ void init_I2C1(void){
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
 	NVIC_Init(&NVIC_InitStructure);
-	*/
 	
 	// enable I2C1
 	I2C_Cmd(I2C1, ENABLE);
@@ -288,20 +286,25 @@ int main(void){
 		}
 		*/
 		//Clear ADDR flag, by reading s1 and s2
+		/*
 		while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_ADDR));
 		((void)(I2C1->SR2));
+		*/
 
 		//Until get stop bit
 		//while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_STOPF)) {
 
 		//Read, implicitly clears BTF flag
+		/*
 		while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_RXNE));
 		data = I2C_ReceiveData(I2C1);
-
+		*/
 		//}
 		//Clear stop bit
+		/*
 		while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_STOPF));
 		I2C_Cmd(I2C1, ENABLE);
+		*/
 
 
 		//I2C_start(I2C1, SLAVE_ADDRESS<<1, I2C_Direction_Transmitter); // start a transmission in Master transmitter mode
@@ -313,15 +316,122 @@ int main(void){
 		//received_data[0] = I2C_read_ack(I2C1); // read one byte and request another byte
 		//received_data[1] = I2C_read_nack(I2C1); // read one byte and don't request another byte, stop transmission
 		//I2C_stop(I2C1); // stop the transmission
-		//for(i = 0; i < 1000000; ++i);
+		for(i = 0; i < 1000000; ++i);
 	}
+}
+
+//Clear ADDR by reading SR1, then SR2
+void I2C_clear_ADDR(I2C_TypeDef* I2Cx) {
+	I2C_GetFlagStatus(I2Cx, I2C_FLAG_ADDR);
+	((void)(I2Cx->SR2));
+}
+
+//Clear STOPF by reading SR1, then writing CR1
+void I2C_clear_STOPF(I2C_TypeDef* I2Cx) {
+	I2C_GetFlagStatus(I2Cx, I2C_FLAG_STOPF);
+	I2C_Cmd(I2Cx, ENABLE);
 }
 
 void I2C1_EV_IRQHandler(void) {
         GPIO_SetBits(GPIOD, GREEN);
+		uint8_t data;
+		switch(I2C_GetLastEvent(I2C1)) {
+			//SLAVE
+			//Receive
+			case I2C_EVENT_SLAVE_RECEIVER_ADDRESS_MATCHED: //EV1
+				I2C_clear_ADDR(I2C1);
+				break;
+			case I2C_EVENT_SLAVE_BYTE_RECEIVED: //EV2
+				//Read it, so no one is waiting, clears BTF if necessary
+				data = I2C_ReceiveData(I2C1);
+				//Do something with it
+				if(I2C_GetFlagStatus(I2C1, I2C_FLAG_DUALF)) {//Secondary Receive
+				} else if(I2C_GetFlagStatus(I2C1, I2C_FLAG_GENCALL)) {//General Receive
+				} else {//Normal
+				}
+				break;
+			case I2C_EVENT_SLAVE_STOP_DETECTED: //End of receive, EV4
+				I2C_clear_STOPF(I2C1);
+				break;
+			//Transmit
+			case I2C_EVENT_SLAVE_TRANSMITTER_ADDRESS_MATCHED: //EV1
+				break;
+			case I2C_EVENT_SLAVE_BYTE_TRANSMITTED: //EV3
+				if(I2C_GetFlagStatus(I2C1, I2C_FLAG_DUALF)) {//Secondary Transmit
+				} else if(I2C_GetFlagStatus(I2C1, I2C_FLAG_GENCALL)) {//General Transmit
+				} else {//Normal
+
+				}
+				break;
+			case I2C_EVENT_SLAVE_ACK_FAILURE://End of transmission EV3_2
+				break;
+			//Alternative Cases for address match
+			case I2C_EVENT_SLAVE_RECEIVER_SECONDADDRESS_MATCHED: //EV1
+				break;
+			case I2C_EVENT_SLAVE_TRANSMITTER_SECONDADDRESS_MATCHED: //EV1
+				break;
+			case I2C_EVENT_SLAVE_GENERALCALLADDRESS_MATCHED: //EV1
+				break;
+
+			//MASTER
+			case I2C_EVENT_MASTER_MODE_SELECT: //EV5, just sent start bit
+				break;
+			//Receive
+			case I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED: //EV6, just sent addr    
+				break;
+			case I2C_EVENT_MASTER_BYTE_RECEIVED: //EV7
+				break;
+			//Transmit
+			case I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED: //EV6, just sent addr     
+				break;
+			case I2C_EVENT_MASTER_BYTE_TRANSMITTING: //EV8, about to send data
+				break;
+			case I2C_EVENT_MASTER_BYTE_TRANSMITTED: //EV8_2, just sent data
+				break;
+
+			//Alternative addressing stuff, not going to worry about
+			case I2C_EVENT_MASTER_MODE_ADDRESS10: //EV9
+				break;
+			default:
+				//How the FUCK did you get here?
+				//I should probably raise some error, but fuck it,
+				//it's late
+				break;
+		}
 }
 
 void I2C1_ER_IRQHandler(void) {
         GPIO_SetBits(GPIOD, RED);
+		//Can't use nice switch statement, because no fxn available
+		if(I2C_GetITStatus(I2C1,        I2C_IT_SMBALERT)) {
+		} else if(I2C_GetITStatus(I2C1, I2C_IT_TIMEOUT)) {
+		} else if(I2C_GetITStatus(I2C1, I2C_IT_PECERR)) {
+		} else if(I2C_GetITStatus(I2C1, I2C_IT_OVR)) {
+			//Overrun
+			//CLK stretch disabled and receiving
+			//DR has not been read, b4 next byte comes in
+			//effect: lose byte
+			//should:clear RxNE and transmitter should retransmit
+
+			//Underrun
+			//CLK stretch disabled and I2C transmitting
+			//haven't updated DR since new clock
+			//effect: same byte resent
+			//should: make sure discarded, and write next
+		} else if(I2C_GetITStatus(I2C1, I2C_IT_AF)) {
+			//Detected NACK
+			//Transmitter must reset com
+				//Slave: lines released
+				//Master: Stop or repeated Start must must be generated
+				//Master = MSL bit
+		} else if(I2C_GetITStatus(I2C1, I2C_IT_ARLO)) {
+			//Arbitration Lost
+			//Goes to slave mode, but can't ack slave address in same transfer
+			//Can after repeat Start though
+		} else if(I2C_GetITStatus(I2C1, I2C_IT_BERR)) {
+			//Bus Error
+			//In slave mode: data discarded, lines released, acts like restart
+			//In master mode: current transmission continues
+		}
 }
 

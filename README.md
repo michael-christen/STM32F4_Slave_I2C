@@ -1,4 +1,6 @@
-__STM32F4 Asynchronous I2C Slave Example__
+STM32F4 Asynchronous I2C Slave Example
+=======================================
+
 Hi, this is an example for i2c slave communication on the STM32F4
 discovery board. I am going to be using a form of this on my class
 project for EECS 473. You can see this project

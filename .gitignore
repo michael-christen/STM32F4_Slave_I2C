@@ -1,0 +1,5 @@
+*.vim
+*.bin
+*.hex
+*.elf
+*.swp

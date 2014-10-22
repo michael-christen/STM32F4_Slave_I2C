@@ -332,9 +332,14 @@ void I2C_clear_STOPF(I2C_TypeDef* I2Cx) {
 	I2C_Cmd(I2Cx, ENABLE);
 }
 
+uint8_t data = 0;
 void I2C1_EV_IRQHandler(void) {
         GPIO_SetBits(GPIOD, GREEN);
-		uint8_t data;
+		//Clear AF from transmission problems
+		if(I2C_GetITStatus(I2C1, I2C_IT_AF)) {
+			I2C_ClearITPendingBit(I2C1, I2C_IT_AF);
+		}
+		  
 		switch(I2C_GetLastEvent(I2C1)) {
 			//SLAVE
 			//Receive
@@ -353,17 +358,28 @@ void I2C1_EV_IRQHandler(void) {
 			case I2C_EVENT_SLAVE_STOP_DETECTED: //End of receive, EV4
 				I2C_clear_STOPF(I2C1);
 				break;
+
 			//Transmit
 			case I2C_EVENT_SLAVE_TRANSMITTER_ADDRESS_MATCHED: //EV1
+				I2C_clear_ADDR(I2C1);
+				//Send first byte
+				I2C_SendData(I2C1, ++data);
 				break;
 			case I2C_EVENT_SLAVE_BYTE_TRANSMITTED: //EV3
+				//Determine what you want to send
+				//data = 5;
 				if(I2C_GetFlagStatus(I2C1, I2C_FLAG_DUALF)) {//Secondary Transmit
 				} else if(I2C_GetFlagStatus(I2C1, I2C_FLAG_GENCALL)) {//General Transmit
 				} else {//Normal
-
 				}
+				//Read flag and write next byte to clear BTF if present
+				I2C_GetFlagStatus(I2C1, I2C_FLAG_BTF);
+				I2C_SendData(I2C1, ++data);
 				break;
 			case I2C_EVENT_SLAVE_ACK_FAILURE://End of transmission EV3_2
+				//TODO: Doesn't seem to be getting reached, so just
+				//check at top-level
+				I2C_ClearITPendingBit(I2C1, I2C_IT_AF);
 				break;
 			//Alternative Cases for address match
 			case I2C_EVENT_SLAVE_RECEIVER_SECONDADDRESS_MATCHED: //EV1
@@ -372,6 +388,7 @@ void I2C1_EV_IRQHandler(void) {
 				break;
 			case I2C_EVENT_SLAVE_GENERALCALLADDRESS_MATCHED: //EV1
 				break;
+
 
 			//MASTER
 			case I2C_EVENT_MASTER_MODE_SELECT: //EV5, just sent start bit
@@ -424,6 +441,8 @@ void I2C1_ER_IRQHandler(void) {
 				//Slave: lines released
 				//Master: Stop or repeated Start must must be generated
 				//Master = MSL bit
+			//Fixup
+			I2C_ClearITPendingBit(I2C1, I2C_IT_AF);
 		} else if(I2C_GetITStatus(I2C1, I2C_IT_ARLO)) {
 			//Arbitration Lost
 			//Goes to slave mode, but can't ack slave address in same transfer

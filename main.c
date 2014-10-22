@@ -4,16 +4,18 @@
 #include "stm32f4_discovery.h"
 #include "misc.h"  //NVIC & Such
 
-#define SLAVE_ADDRESS 0x4 // the slave address (example)
-#define MY_I2C_ADDRESS    0x0
+//Need to shift because I2C library just masks with 0xFE
+//and top 7-bits are used as address
+#define MY_I2C_ADDRESS    0x1 << 1  
 
+//LED code from:
+//https://github.com/Malkavian/tuts/tree/master/stm/blinky
 #define GREEN  LED4_PIN
 #define ORANGE LED3_PIN
 #define RED    LED5_PIN
 #define BLUE   LED6_PIN
 #define ALL_LEDS (GREEN | ORANGE | RED | BLUE) // all leds
 #define LEDS_GPIO_PORT (GPIOD)
-
 static void setup_leds(void)
 {
 
@@ -54,6 +56,8 @@ static void setup_leds(void)
      * these memory addresses. */
 }
 
+//Initialization and general help with STM32 I2C from:
+//https://github.com/devthrash/STM32F4-examples/tree/master/I2C%20Master
 void init_I2C1(void){
 	
 	GPIO_InitTypeDef GPIO_InitStruct;
@@ -109,214 +113,18 @@ void init_I2C1(void){
 	I2C_Cmd(I2C1, ENABLE);
 }
 
-/* This function issues a start condition and 
- * transmits the slave address + R/W bit
- * 
- * Parameters:
- * 		I2Cx --> the I2C peripheral e.g. I2C1
- * 		address --> the 7 bit slave address
- * 		direction --> the tranmission direction can be:
- * 						I2C_Direction_Tranmitter for Master transmitter mode
- * 						I2C_Direction_Receiver for Master receiver
- */
-void I2C_start(I2C_TypeDef* I2Cx, uint8_t address, uint8_t direction){
-	// wait until I2C1 is not busy anymore
-	while(I2C_GetFlagStatus(I2Cx, I2C_FLAG_BUSY));
-  
-	// Send I2C1 START condition 
-	I2C_GenerateSTART(I2Cx, ENABLE);
-	  
-	// wait for I2C1 EV5 --> Slave has acknowledged start condition
-	while(!I2C_CheckEvent(I2Cx, I2C_EVENT_MASTER_MODE_SELECT));
-		
-	// Send slave Address for write 
-	I2C_Send7bitAddress(I2Cx, address, direction);
-	  
-	/* wait for I2C1 EV6, check if 
-	 * either Slave has acknowledged Master transmitter or
-	 * Master receiver mode, depending on the transmission
-	 * direction
-	 */ 
-	if(direction == I2C_Direction_Transmitter){
-		while(!I2C_CheckEvent(I2Cx, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED));
-	}
-	else if(direction == I2C_Direction_Receiver){
-		while(!I2C_CheckEvent(I2Cx, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED));
-	}
-}
-
-uint32_t I2C_analyzeState(I2C_TypeDef* I2Cx) {
-	uint32_t i2c_status = I2C_GetLastEvent(I2Cx);
-	int numFlags = 0;
-	//Large structure to do specific thing for each flag
-	if(i2c_status  & I2C_FLAG_DUALF) {
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_SMBHOST) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_SMBDEFAULT) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_GENCALL) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_TRA) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_BUSY) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_MSL) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_SMBALERT) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_TIMEOUT) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_PECERR) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_OVR) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_AF) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_ARLO) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_BERR) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_TXE) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_RXNE) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_STOPF) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_ADD10) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_BTF) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_ADDR) {
-
-		numFlags++;
-	}if(i2c_status & I2C_FLAG_SB) {
-
-		numFlags++;
-	}
-	return i2c_status;
-}
-
-/* This function transmits one byte to the slave device
- * Parameters:
- *		I2Cx --> the I2C peripheral e.g. I2C1 
- *		data --> the data byte to be transmitted
- */
-void I2C_write(I2C_TypeDef* I2Cx, uint8_t data)
-{
-	I2C_SendData(I2Cx, data);
-	// wait for I2C1 EV8_2 --> byte has been transmitted
-	while(!I2C_CheckEvent(I2Cx, I2C_EVENT_MASTER_BYTE_TRANSMITTED));
-}
-
-/* This function reads one byte from the slave device 
- * and acknowledges the byte (requests another byte)
- */
-uint8_t I2C_read_ack(I2C_TypeDef* I2Cx){
-	// enable acknowledge of recieved data
-	I2C_AcknowledgeConfig(I2Cx, ENABLE);
-	// wait until one byte has been received
-	while( !I2C_CheckEvent(I2Cx, I2C_EVENT_MASTER_BYTE_RECEIVED) );
-	// read data from I2C data register and return data byte
-	uint8_t data = I2C_ReceiveData(I2Cx);
-	return data;
-}
-
-/* This function reads one byte from the slave device
- * and doesn't acknowledge the recieved data 
- */
-uint8_t I2C_read_nack(I2C_TypeDef* I2Cx){
-	// disabe acknowledge of received data
-	// nack also generates stop condition after last byte received
-	// see reference manual for more info
-	I2C_AcknowledgeConfig(I2Cx, DISABLE);
-	// wait until one byte has been received
-	while( !I2C_CheckEvent(I2Cx, I2C_EVENT_MASTER_BYTE_RECEIVED) );
-	// read data from I2C data register and return data byte
-	uint8_t data = I2C_ReceiveData(I2Cx);
-	I2C_GenerateSTOP(I2Cx, ENABLE);
-	return data;
-}
-
-/* This funtion issues a stop condition and therefore
- * releases the bus
- */
-void I2C_stop(I2C_TypeDef* I2Cx){
-	// Send I2C1 STOP Condition 
-	I2C_GenerateSTOP(I2Cx, ENABLE);
-}
-
 int main(void){
-	
-	setup_leds();
-	init_I2C1(); // initialize I2C peripheral
-	
 	uint8_t received_data[2];
 	int i;
 	uint32_t curStatus = 0;
 	uint8_t data;
-	
+	//Initializtion
+	setup_leds();
+	init_I2C1();
+	//Busy Loop
 	while(1){
-        GPIO_ToggleBits(LEDS_GPIO_PORT, BLUE);
-		/*
-		while(!I2C_CheckEvent(I2C1, 
-					I2C_EVENT_SLAVE_RECEIVER_ADDRESS_MATCHED) 
-				&&
-				!I2C_CheckEvent(I2C1, 
-					I2C_EVENT_SLAVE_RECEIVER_SECONDADDRESS_MATCHED)) {
-			curStatus = I2C_analyzeState(I2C1);
-		}
-		*/
-		//Clear ADDR flag, by reading s1 and s2
-		/*
-		while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_ADDR));
-		((void)(I2C1->SR2));
-		*/
-
-		//Until get stop bit
-		//while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_STOPF)) {
-
-		//Read, implicitly clears BTF flag
-		/*
-		while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_RXNE));
-		data = I2C_ReceiveData(I2C1);
-		*/
-		//}
-		//Clear stop bit
-		/*
-		while(!I2C_GetFlagStatus(I2C1, I2C_FLAG_STOPF));
-		I2C_Cmd(I2C1, ENABLE);
-		*/
-
-
-		//I2C_start(I2C1, SLAVE_ADDRESS<<1, I2C_Direction_Transmitter); // start a transmission in Master transmitter mode
-		//I2C_write(I2C1, 'a'); // write one byte to the slave
-		//I2C_write(I2C1, 'b'); // write another byte to the slave
-		//I2C_stop(I2C1); // stop the transmission
-		
-		//I2C_start(I2C1, SLAVE_ADDRESS<<1, I2C_Direction_Receiver); // start a transmission in Master receiver mode
-		//received_data[0] = I2C_read_ack(I2C1); // read one byte and request another byte
-		//received_data[1] = I2C_read_nack(I2C1); // read one byte and don't request another byte, stop transmission
-		//I2C_stop(I2C1); // stop the transmission
-		for(i = 0; i < 1000000; ++i);
+        GPIO_ToggleBits(LEDS_GPIO_PORT, BLUE); //Do something
+		for(i = 0; i < 1000000; ++i); //Really terrible delay function
 	}
 }
 
@@ -334,12 +142,12 @@ void I2C_clear_STOPF(I2C_TypeDef* I2Cx) {
 
 uint8_t data = 0;
 void I2C1_EV_IRQHandler(void) {
-        GPIO_SetBits(GPIOD, GREEN);
-		//Clear AF from transmission problems
+        GPIO_SetBits(GPIOD, GREEN); //Show that we got here
+		//Clear AF from slave-transmission end
 		if(I2C_GetITStatus(I2C1, I2C_IT_AF)) {
 			I2C_ClearITPendingBit(I2C1, I2C_IT_AF);
 		}
-		  
+		//Big state machine response, since doesn't actually keep state
 		switch(I2C_GetLastEvent(I2C1)) {
 			//SLAVE
 			//Receive
